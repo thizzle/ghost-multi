@@ -1,0 +1,81 @@
+---
+
+- hosts: all
+  tasks:
+    - name: Install yum repository EPEL
+      yum: pkg=epel-release
+
+    - name: Install pip for Python
+      yum: pkg=python-pip
+
+    - name: Install yum repository for docker
+      copy: src=files/docker.repo dest=/etc/yum.repos.d/docker.repo owner=root group=root mode-0644
+
+    - name: Install docker engine
+      yum: pkg=docker-engine
+
+    - name: Start docker engine
+      service: name=docker state=started
+
+    - name: Install Python bindings for docker
+      pip: name=docker-py version=1.1.0
+
+    - name: Create directory application
+      tags: application
+      file: dest=/etc/nginx-proxy state=directory owner=root group=root mode=0755
+
+    - name: Create blog directories
+      tags: application
+      file: dest=/var/blog/{{ item }} state=directory owner=root group=root mode=0755
+      with_items: blogs
+
+    - name: Create blog application configuration files
+      tags: application
+      template: src=templates/config.js.j2 dest=/var/blog/{{ item }}/config.js owner=root group=root mode=0644
+      with_items: blogs
+
+    - name: Install nginx configuration file template for docker-gen
+      tags: application
+      get_url:
+        url: https://raw.githubusercontent.com/jwilder/nginx-proxy/master/nginx.tmpl
+        dest: /etc/nginx-proxy/nginx.tmpl
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Start container for nginx
+      tags: container
+      docker:
+        image: nginx
+        name: web
+        ports:
+          - "80:80"
+          - "443:443"
+        volumes:
+          - /etc/nginx/conf.d
+          - /etc/nginx/certs
+
+    - name: Start container for docker-gen
+      tags: container
+      docker:
+        image: jwilder/docker-gen
+        name: gen
+        command: "-notify-sighup web -watch -only-exposed /etc/nginx-proxy/nginx.tmpl /etc/nginx/conf.d/default.conf"
+        volumes_from:
+          - web
+        volumes:
+          - /var/run/docker.sock:/tmp/docker.sock:ro
+          - /etc/nginx-proxy/:/etc/nginx-proxy/:ro
+
+    - name: Start containers for blogs
+      tags: container
+      docker:
+        image: ghost:0.7.1
+        name: ghost_{{ item }}
+        volumes:
+          - /var/blog/{{ item }}/:/var/lib/ghost/
+        env:
+          VIRTUAL_HOST: "{{ item }}"
+          VIRTUAL_PORT: 2368
+          NODE_ENV: production
+      with_items: blogs
