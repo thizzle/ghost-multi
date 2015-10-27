@@ -36,12 +36,7 @@
 
     - name: Install nginx configuration file template for docker-gen
       tags: application
-      get_url:
-        url: https://raw.githubusercontent.com/jwilder/nginx-proxy/master/nginx.tmpl
-        dest: /etc/nginx-proxy/nginx.tmpl
-        owner: root
-        group: root
-        mode: 0644
+      copy: src=files/nginx.tmpl dest=/etc/nginx-proxy/nginx.tmpl owner=root group=root mode=0644
 
     - name: Start container for nginx
       tags: container
